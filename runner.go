@@ -9,13 +9,12 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-  "http/client"
-
+  "net/http"
 	"github.com/flynn/flynn/discoverd/client"
 )
 
 var dataDir = flag.String("data", "/data", "elasticsearch data directory")
-var serviceName = flag.String("service", "elasticsearch", "discoverd service name")
+var serviceName = flag.String("service", "elastic", "discoverd service name")
 var addr = ":" + os.Getenv("PORT")
 
 func init() {
@@ -25,27 +24,22 @@ func init() {
 func main() {
 	flag.Parse()
 
-	cmd, err := startMongod()
+	cmd, err := startElasticsearch()
+  
 	if err != nil {
 		log.Fatal(err)
+	} else {
+	  log.Println(fmt.Sprintf("Process %s", cmd.Process.Pid))
 	}
   
-	sess := waitForElasticsearch(time.Minute)
-
-	fatal := func(err error) {
-		discoverd.UnregisterAll()
-		cmd.Process.Signal(os.Interrupt)
-		log.Fatal(err)
-	}
+	waitForElasticsearch(time.Minute)
 
 	set, err := discoverd.RegisterWithSet(*serviceName, addr, nil)
   
-	if err != nil {
-		fatal(err)
-	}
-
 	log.Println("Registered with service discovery.")
+  
 	var self *discoverd.Service
+  
 	leaders := set.Leaders()
 	for l := range leaders {
 		if l.Addr == set.SelfAddr() {
@@ -57,6 +51,10 @@ func main() {
 			break
 		}
 	}
+  
+  if self != nil {
+    
+  }
 }
 
 func waitExit(cmd *exec.Cmd) {
@@ -68,17 +66,6 @@ func waitExit(cmd *exec.Cmd) {
 	}
 	os.Exit(status)
 }
-
-func buildMembers(self *discoverd.Service, services []*discoverd.Service) []replMember {
-	res := make([]replMember, len(services)+1)
-	res[0].Host = self.Addr
-	for i, s := range services {
-		res[i+1].ID = uint8(i + 1)
-		res[i+1].Host = s.Addr
-	}
-	return res
-}
-
 
 func waitForElasticsearch(maxWait time.Duration) bool {
 	log.Println("Waiting for elasticsearch to boot...")
@@ -95,6 +82,7 @@ func waitForElasticsearch(maxWait time.Duration) bool {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
+    log.Println(fmt.Sprintf("Response %s", resp))
 	}
   return true
 }
